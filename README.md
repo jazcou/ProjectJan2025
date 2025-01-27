@@ -1,6 +1,10 @@
 # ProjectJan2025
 An algorithmic framework designed to start to address the challenges of managing market noise and adapting to evolving market regimes
 
+
+### `data/`
+- **`merged_assets.parquet`**: The main dataset containing merged data for all assets.
+
 ### `scripts/`
 - **`bring_in_data_indivisual.py`**: Script to import individual asset data from Bloomberg.
 - **`merge_data.py`**: Script to merge individual asset data into a single dataset.
