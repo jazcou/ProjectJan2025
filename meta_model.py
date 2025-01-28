@@ -577,7 +577,7 @@ def calculate_z_score_with_factor(data, window_range):
         z_score = (data - rolling_mean) / rolling_std
         result[f"Z_Score_Window_{window}"] = z_score
     
-        # Apply factor logic
+        
         factor = z_score.copy()
         factor[z_score < 2] = 1  # Set factor to 1 if Z-score < 2
         factor[z_score >= 2] = 1 + (z_score[z_score >= 2] - 2)  # Add the excess over 2 std deviations
@@ -682,7 +682,7 @@ def meta_model_mass_study(
     
 
     
-    # Rolling window logic
+    # Rolling window 
     count = 0
     while start_date_idx + training_data_size + out_of_sample_size <= end_date_idx:
         count += 1
