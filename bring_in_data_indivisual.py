@@ -14,20 +14,6 @@ start_time="02:00:00"
 end_time="08:00:00"
 #Define month codes and expiration days (assuming CME contract rules)
 
-# CL
-# month_codes = {
-#     'F': [11],    # January
-#     'G': [12],    # February
-#     'H': [1],    # March
-#     'J': [2],    # April
-#     'K': [3],    # May
-#     'M': [4],    # June
-#     'N': [5],    # July
-#     'Q': [6],    # August
-#     'U': [7],    # September
-#     'V': [8],   # October
-#     'X': [9],   # November
-#     'Z': [10]}   # December
 
 
 #ES, MES, ZN, etc
