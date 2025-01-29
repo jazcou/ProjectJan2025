@@ -395,8 +395,8 @@ def fit_model(train_features, train_target, test_features, test_target, model_ty
     y_test = test_target
 
     # define ranges for netowrk and in turn heat map
-    hidden_layer_range = range(5, 25,5)  
-    epoch_range = range(100, 500, 100) 
+    hidden_layer_range = range(10, 52,10)  
+    epoch_range = range(100, 600, 100) 
 
     if model_type == 'linear':
         model = LinearRegression()
@@ -435,21 +435,27 @@ def fit_model(train_features, train_target, test_features, test_target, model_ty
                         hidden_layer_sizes=(neurons,), 
                         max_iter=epochs, 
                         alpha=0.001,  # L2 regularisation to reduce overfitting
-                        random_state=42
+                        random_state=42,
+                        activation='tanh',
+                        early_stopping=False,  # Ensure full training
+                        n_iter_no_change=epochs + 10  # Prevent early stopping
                     )
                 elif model_type == 'nn_2_layer':
                     model = MLPRegressor(
                         hidden_layer_sizes=(neurons, neurons), 
                         max_iter=epochs, 
                         alpha=0.001,  # L2 regularisation to reduce overfitting
-                        random_state=42
+                        random_state=42,
+                        activation='tanh',
+                        early_stopping=False,  # Ensure full training
+                        n_iter_no_change=epochs + 10  # Prevent early stopping
                     )
                 try:
                     model.fit(X_train, y_train)
                     predictions = model.predict(X_train)
                     r2 = r2_score(y_train, predictions)
                     row_results.append(r2)
-
+                    print(f"epochs : {epochs} ,neurons : {neurons}, r2 : {r2}")
                     # keep a note of best paramas
                     if r2 > best_r2:
                         best_r2 = r2
@@ -466,6 +472,8 @@ def fit_model(train_features, train_target, test_features, test_target, model_ty
         plt.ylabel("Neurons in Hidden Layer")
         plt.title(f"R2 Score Heatmap for {model_type}")
         plt.show()
+        
+        
 
         # Train the best model with optimal parameters
         print(f"{model_type}: Neurons={best_params[0]}, Epochs={best_params[1]} potimum params")
@@ -522,25 +530,69 @@ def fit_model(train_features, train_target, test_features, test_target, model_ty
                 shap_out_sample_correlations, orient='index', columns=['Correlation_with_Target']
             ).sort_values(by='Correlation_with_Target', ascending=False)
 
-            shap_results = {
-                "shap_values": shap_values_matrix,
-                "mean_shap": mean_shap,
-                "out_sample_correlations": shap_out_sample_correlations
-            }
+            shap_importance_df = pd.DataFrame({
+                'Feature': X_test.columns,
+                'Mean_SHAP_Value': mean_shap
+            })
+            
+            # Sort by SHAP importance
+            shap_importance_df = shap_importance_df.sort_values(by="Mean_SHAP_Value", ascending=False)
+            
+            # Plot
+            plt.figure(figsize=(10, 6))
+            plt.barh(shap_importance_df['Feature'], shap_importance_df['Mean_SHAP_Value'], color='darkblue')
+            plt.xlabel("Mean Absolute SHAP Value")
+            plt.ylabel("Feature")
+            plt.title(f"{model_type} SHAP Values")
+            plt.gca().invert_yaxis()  # Highest importance at the top
+            plt.show()
 
-            # SHAP summary plots
-            shap.summary_plot(shap_values_matrix, X_test, plot_type="bar")
-            shap.summary_plot(shap_values_matrix, X_test)
+            
+ 
+            
+            shap_r2_results = {}
+            for i, feature in enumerate(X_test.columns):
+                print(f"Processing feature: {feature}")
 
+                # Extract the SHAP values for this feature
+                shap_feature_values = shap_values_matrix[:, i].reshape(-1, 1)  # Reshape for sklearn
+            
+                # Fit a simple linear regression model
+                reg = LinearRegression()
+                reg.fit(shap_feature_values, y_test)  
+                predictions = reg.predict(shap_feature_values)  
+            
+                # Calculate R² score
+                r2 = r2_score(y_test, predictions)
+            
+                # Generate a range for the regression line
+                shap_range = np.linspace(shap_feature_values.min(), shap_feature_values.max(), 100).reshape(-1, 1)
+                reg_line = reg.predict(shap_range)
+            
+                # Plot
+                plt.figure(figsize=(6, 4))
+                plt.scatter(shap_feature_values, y_test, alpha=0.6, color="black", s=8)  # Small black dots
+                plt.plot(shap_range, reg_line, color="red", linewidth=2)  # Red regression line
+            
+                # Formatting
+                plt.xlabel(f"SHAP Value for {feature}")
+                plt.ylabel("Target (y_test)")
+                plt.title(f"SHAP vs Target for {feature} \nR² = {r2:.4f}")  # Include R² in title
+                plt.legend()
+            
+                # Show R² annotation on plot
+                plt.annotate(f"R² = {r2:.4f}", xy=(0.05, 0.9), xycoords="axes fraction", fontsize=12, color="red")
+            
+                plt.show()
         except Exception as e:
             print(f"SHAP failed: {e}")
             
             
-
-    if model_type in ['nn_1_layer', 'nn_2_layer']:
-        print(f"Weights of {model_type}: {model.coefs_}")
-        # Reverse engineer weights
-        importance_df = reverse_engineer_weights(model, X_train)
+            
+    # if model_type in ['nn_1_layer', 'nn_2_layer']:
+    #     print(f"Weights of {model_type}: {model.coefs_}")
+    #     # Reverse engineer weights
+    #     importance_df = reverse_engineer_weights(model, X_train)
     
      
 
@@ -556,34 +608,39 @@ def fit_model(train_features, train_target, test_features, test_target, model_ty
         'Out_Sample_Accuracy': out_of_sample_accuracy,
         'In_Sample_Predictions': in_sample_predictions,
         'Out_Sample_Predictions': out_of_sample_predictions,
+        'Out_Sample_target':y_test,
+        
+        
+        
         'Shap_Results': shap_results,  # All SHAP details as a nested dictionary
         'shap_values': shap_results['shap_values'] if shap_results else None,
         'mean_shap': shap_results['mean_shap'] if shap_results else None,
-        'importance_df': importance_df,
+        'importance_df': None,
     
         'out_sample_correlations' :shap_out_sample_correlations if shap_results else None,
         'Best_Params': best_params if model_type in ['nn_1_layer', 'nn_2_layer'] else None}
 
 
     
-def calculate_z_score_with_factor(data, window_range):
-    result = pd.DataFrame(index=data.index)
+def calculate_z_score_with_factor(asset, data,training_data_size,out_of_sample_size):
     
-    for window in window_range:
-        rolling_mean = data.rolling(window=window).mean()
-        rolling_std = data.rolling(window=window).std()
-    
-        # Calculate Z-score
-        z_score = (data - rolling_mean) / rolling_std
-        result[f"Z_Score_Window_{window}"] = z_score
-    
-        
-        factor = z_score.copy()
-        factor[z_score < 2] = 1  # Set factor to 1 if Z-score < 2
-        factor[z_score >= 2] = 1 + (z_score[z_score >= 2] - 2)  # Add the excess over 2 std deviations
-        result[f"Factor_Window_{window}"] = factor
-    
-        return result
+    window = (training_data_size -1) *20 *400
+    data = data[f"{asset}_price_diff"].iloc[1:window]
+    data = data.dropna()
+    rolling_mean = data.rolling(window=int(window/2)).mean()
+    rolling_std = data.rolling(window=int(window/2)).std()
+    rolling_mean2 = data.rolling(window=500).mean()
+
+    # Calculate Z-score
+    z_score = (rolling_mean2 - rolling_mean) / rolling_std
+    z = z_score[-1]
+    if abs(z) > 2:
+         factor = 1 + (z[z >= 2] - 2) 
+    else:
+         factor = 1 
+
+
+    return factor
 
 
 def meta_model_mass_study(
@@ -608,32 +665,30 @@ def meta_model_mass_study(
     data[f'{asset}_percent_returns'] = data[f'{asset}_adj_price'].pct_change() * 100  
     
     
-    # Generate Volatility-Based Features
-    vol_features = generate_vol_features(data, asset, lookback_windows)
+
 
     # Dynamically adjust lookback and forecast windows if required - need to update the vol impact and trigger
-    vol_scale =  calculate_z_score_with_factor(data, window_range=1000)
+    vol_scale =  calculate_z_score_with_factor(asset,data, training_data_size,out_of_sample_size)
+    print(f"{asset}...intitally has vol scale {vol_scale}")
     # need to update above below is which factor or all to update form vol period - but reduce vol to smaller size to capture more recent market moves over 2 stdv
     if dynamic_vol_update == 'all':
-        vol_scale =  calculate_z_score_with_factor(data, window_range=1000)
-        adjusted_lookback_windows = [int(window / vol_scale) for window in lookback_windows]
         forecast_window = int(forecast_window / vol_scale)
-        training_data_size = int(training_data_size / vol_scale)
-    elif dynamic_vol_update == 'TW':
-             
-        vol_scale =  calculate_z_score_with_factor(data, window_range=1000)
-        training_data_size = int(training_data_size / vol_scale)
-    elif dynamic_vol_update == 'FEW':
-        vol_scale =  calculate_z_score_with_factor(data, window_range=1000)     
         adjusted_lookback_windows = [int(window / vol_scale) for window in lookback_windows]
-    elif dynamic_vol_update == 'FW':
-        vol_scale =  calculate_z_score_with_factor(data, window_range=1000)      
-        forecast_window = int(forecast_window / vol_scale)
-        adjusted_lookback_windows = lookback_windows            
+    elif dynamic_vol_update == 'FEW':  
+        adjusted_okback_windows = [int(window / vol_scale) for window in lookback_windows]
+    elif dynamic_vol_update == 'FW':    
+        forecast_window = int(forecast_window / vol_scale)         
     elif dynamic_vol_update == 'NONE':
         adjusted_lookback_windows = lookback_windows
+        
+    vol_features = generate_vol_features(data, asset, lookback_windows)
+    print("..gen trend features")
+    trend_features = generate_trend_features(data, asset, adjusted_lookback_windows)
+    print("..gen noise features")
+    noise_features = generate_noise_reduction_features(data, asset, adjusted_lookback_windows,autoencoders_=autoencoders)
+    print("..gen target")
+    target = (data[f"{asset}_adj_price"].shift(-forecast_window) - data[f"{asset}_adj_price"]) / data[f"{asset}_adj_price"]
 
-    # Generate Features
     if gnn_features:
         print("..gen reversion features with gnn")
         reversion_features = generate_revserion_features(data, asset, lookback_windows, gnn_features=gnn_features)
@@ -641,12 +696,10 @@ def meta_model_mass_study(
         print("..gen reversion features")
         reversion_features = generate_revserion_features(data, asset, lookback_windows)
 
-    print("..gen trend features")
-    trend_features = generate_trend_features(data, asset, adjusted_lookback_windows)
-    print("..gen noise features")
-    noise_features = generate_noise_reduction_features(data, asset, adjusted_lookback_windows,autoencoders_=autoencoders)
-    print("..gen target")
-    target = (data[f"{asset}_adj_price"].shift(-forecast_window) - data[f"{asset}_adj_price"]) / data[f"{asset}_adj_price"]
+
+
+
+
 
     # Drop rows with NaN values across features and target
     combined_df = pd.concat([trend_features, reversion_features, noise_features, vol_features, target], axis=1).dropna()
@@ -672,6 +725,8 @@ def meta_model_mass_study(
 
     results = {}
     results_df = pd.DataFrame()
+    target_x = pd.DataFrame()
+    meta_model_prediction_x = pd.DataFrame()
     
     # Replace `inf` and `-inf` with `NaN` - check whats causing 
     trend_features.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -682,7 +737,7 @@ def meta_model_mass_study(
     
 
     
-    # Rolling window 
+    # Rolling window logic
     count = 0
     while start_date_idx + training_data_size + out_of_sample_size <= end_date_idx:
         count += 1
@@ -699,6 +754,8 @@ def meta_model_mass_study(
         test_start_date = train_end_date + pd.Timedelta(minutes=1)
         test_end_date = test_start_date + testing_period - pd.Timedelta(minutes=1)
     
+
+            
         # Adjust test_start_date and test_end_date if exceeding the data range
         if test_start_date > combined_df.index[-1]:
             print(f"No valid test data available starting from {test_start_date}. Stopping rolls.")
@@ -711,6 +768,15 @@ def meta_model_mass_study(
         # Select train and test data
         train_data = combined_df.loc[train_start_date:train_end_date]
         test_data = combined_df.loc[test_start_date:test_end_date]
+        
+         # make sure train data is only size of the vol scale to end date   
+        if dynamic_vol_update == 'all':
+            tds = int(training_data_size / vol_scale)
+            train_data = train_data.iloc[-tds:]
+        elif dynamic_vol_update == 'TW':
+            tds = int(training_data_size / vol_scale)
+            train_data = train_data.iloc[-tds:]
+            
     
         # Check if test_data is valid; if not, stop the loop
         if test_data.empty:
@@ -734,6 +800,8 @@ def meta_model_mass_study(
         target_out_sample_data = target.reindex(test_data.index)
         
 
+        
+        
         num_inf_values = np.isinf(trend_features_train_data).sum().sum()
         print(f"Number of infinity values in trend_features_train_data: {num_inf_values}")
         num_inf_values = np.isinf(trend_features_out_sample_data).sum().sum()
@@ -787,6 +855,9 @@ def meta_model_mass_study(
             'Shap_Results': trend_results['Shap_Results'],
             'Shap_values': trend_results['shap_values'],
             
+            'Out_Sample_Predictions': trend_results['Out_Sample_Predictions'],
+            'Out_Sample_target':trend_results['Out_Sample_target'],
+            
             'mean_shap': trend_results['mean_shap'],
             'out_sample_correlation': trend_results['out_sample_correlations'], 
             'importance_df': trend_results['importance_df'],
@@ -822,6 +893,9 @@ def meta_model_mass_study(
             'roll': count,
             'Shap_Results': reversion_results['Shap_Results'],
             'Shap_values': reversion_results['shap_values'],
+            
+            'Out_Sample_Predictions': reversion_results['Out_Sample_Predictions'],
+            'Out_Sample_target':reversion_results['Out_Sample_target'],
             
             'mean_shap': reversion_results['mean_shap'],
             'out_sample_correlation': reversion_results['out_sample_correlations'],   
@@ -859,6 +933,10 @@ def meta_model_mass_study(
             'Shap_Results': noise_results['Shap_Results'],
             'Shap_values': noise_results['shap_values'],
             
+                        
+            'Out_Sample_Predictions': noise_results['Out_Sample_Predictions'],
+            'Out_Sample_target':noise_results['Out_Sample_target'],
+            
             'mean_shap': noise_results['mean_shap'],
             'out_sample_correlation': noise_results['out_sample_correlations'],  
             'importance_df': noise_results['importance_df'],
@@ -895,6 +973,9 @@ def meta_model_mass_study(
             'roll': count,
             'Shap_Results': vol_results['Shap_Results'],
             'Shap_values': vol_results['shap_values'],
+            
+            'Out_Sample_Predictions': vol_results['Out_Sample_Predictions'],
+            'Out_Sample_target':vol_results['Out_Sample_target'],
             
             'mean_shap': vol_results['mean_shap'],
             'out_sample_correlation': vol_results['out_sample_correlations'],   
@@ -949,6 +1030,9 @@ def meta_model_mass_study(
             'Shap_Results': meta_results['Shap_Results'],
             'Shap_values': meta_results['shap_values'],
             
+            'Out_Sample_Predictions': meta_results['Out_Sample_Predictions'],
+            'Out_Sample_target': meta_results['Out_Sample_target'],
+            
             'mean_shap': meta_results['mean_shap'],
             'out_sample_correlation': meta_results['out_sample_correlations'],      
             'importance_df': meta_results['importance_df'],
@@ -964,12 +1048,12 @@ def meta_model_mass_study(
         
         # Save Results
         results[(asset, forecast_window)] = {
+            'Roll' : count,
             'Meta_Model_Results': meta_results,
             'Meta_Model_Out_Sample_Predictions': meta_results['Out_Sample_Predictions'],
             'Out_Sample_Target': target_out_sample_data
         }
-        
-        
+                
 
 
         start_date_idx = combined_df.index[start_date_idx] + pd.DateOffset(months=out_of_sample_size)
@@ -977,7 +1061,41 @@ def meta_model_mass_study(
         start_date_idx = combined_df.index.get_loc(start_date_idx)
         print(start_date_idx)
 
-    return results, results_df, trend_features, trend_features_train_data, selected_trend_features , trend_features_out_sample_data, meta_model_features_train
+
+
+        if dynamic_vol_update == 'True':
+        
+            # Dynamically adjust lookback and forecast windows if required - need to update the vol impact and trigger
+            vol_scale =  calculate_z_score_with_factor(asset,data, training_data_size*(count+1),out_of_sample_size)
+            print(f"{asset}...intitally has vol scale {vol_scale} for count {count}")
+            if vol_scale > 1:
+                # need to update above below is which factor or all to update form vol period - but reduce vol to smaller size to capture more recent market moves over 2 stdv
+                if dynamic_vol_update == 'all':
+                    forecast_window = int(forecast_window / vol_scale)
+                    adjusted_lookback_windows = [int(window / vol_scale) for window in lookback_windows]             
+                elif dynamic_vol_update == 'FEW':  
+                    adjusted_lookback_windows = [int(window / vol_scale) for window in lookback_windows]
+                elif dynamic_vol_update == 'FW':    
+                    forecast_window = int(forecast_window / vol_scale)         
+                elif dynamic_vol_update == 'NONE':
+                    adjusted_lookback_windows = lookback_windows
+                    
+                vol_features = generate_vol_features(data, asset, lookback_windows)
+                print("..gen trend features")
+                trend_features = generate_trend_features(data, asset, adjusted_lookback_windows)
+                print("..gen noise features")
+                noise_features = generate_noise_reduction_features(data, asset, adjusted_lookback_windows,autoencoders_=autoencoders)
+                print("..gen target")
+                target = (data[f"{asset}_adj_price"].shift(-forecast_window) - data[f"{asset}_adj_price"]) / data[f"{asset}_adj_price"]
+
+        target_x = pd.concat([target_x, target_out_sample_data], ignore_index=False)
+        meta_model_prediction_x = pd.concat(
+            [meta_model_prediction_x, pd.Series(meta_results['Out_Sample_Predictions'])],
+            ignore_index=True)
+
+
+
+    return results, results_df, target_x, meta_model_prediction_x 
 
 
 
